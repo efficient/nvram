@@ -1,0 +1,35 @@
+19a20,21
+> #include <linux/mman.h>
+> 
+955c957
+< 	struct vm_area_struct *vma;
+---
+> 	struct vm_area_struct *vma, *prev;
+1084c1086
+< 	vma = find_vma(mm, address);
+---
+> 	vma = find_vma_prev(mm, address, &prev);
+1117a1120,1142
+> 
+>         if ((error_code & PF_USER) && (error_code & PF_WRITE)) {
+>             unsigned long paddr = address & PAGE_MASK;
+>             unsigned long newflags;
+> 
+>             //up_read(&mm->mmap_sem);
+> 
+>             //vma = find_vma_prev(mm, paddr, &prev);
+>             newflags = calc_vm_prot_bits(PROT_READ | PROT_WRITE) |
+>                 (vma->vm_flags & ~(VM_READ | VM_WRITE | VM_EXEC));
+> 
+>             //down_write(&mm->mmap_sem);
+> 
+>             if (paddr > vma->vm_start)
+>                 prev = vma;
+> 
+>             mprotect_fixup(vma, &prev, paddr, paddr + PAGE_SIZE, newflags, false);
+> 
+>             up_read(&mm->mmap_sem);
+>             return;
+>         }
+> 
+> 

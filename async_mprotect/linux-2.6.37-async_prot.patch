@@ -1,0 +1,161 @@
+diff -crB original/linux-2.6.37//fs/exec.c linux-2.6.37/fs/exec.c
+*** original/linux-2.6.37//fs/exec.c	2011-01-04 19:50:19.000000000 -0500
+--- linux-2.6.37/fs/exec.c	2011-02-17 20:14:19.203779686 -0500
+***************
+*** 671,677 ****
+  	vm_flags |= VM_STACK_INCOMPLETE_SETUP;
+  
+  	ret = mprotect_fixup(vma, &prev, vma->vm_start, vma->vm_end,
+! 			vm_flags);
+  	if (ret)
+  		goto out_unlock;
+  	BUG_ON(prev != vma);
+--- 671,677 ----
+  	vm_flags |= VM_STACK_INCOMPLETE_SETUP;
+  
+  	ret = mprotect_fixup(vma, &prev, vma->vm_start, vma->vm_end,
+! 			vm_flags, 0);
+  	if (ret)
+  		goto out_unlock;
+  	BUG_ON(prev != vma);
+diff -crB original/linux-2.6.37//include/linux/mm.h linux-2.6.37/include/linux/mm.h
+*** original/linux-2.6.37//include/linux/mm.h	2011-01-04 19:50:19.000000000 -0500
+--- linux-2.6.37/include/linux/mm.h	2011-02-17 20:11:20.153778988 -0500
+***************
+*** 889,895 ****
+  			       unsigned long flags, unsigned long new_addr);
+  extern int mprotect_fixup(struct vm_area_struct *vma,
+  			  struct vm_area_struct **pprev, unsigned long start,
+! 			  unsigned long end, unsigned long newflags);
+  
+  /*
+   * doesn't attempt to fault and will return short.
+--- 889,895 ----
+  			       unsigned long flags, unsigned long new_addr);
+  extern int mprotect_fixup(struct vm_area_struct *vma,
+  			  struct vm_area_struct **pprev, unsigned long start,
+! 			  unsigned long end, unsigned long newflags, unsigned do_not_flush_tlb);
+  
+  /*
+   * doesn't attempt to fault and will return short.
+diff -crB original/linux-2.6.37//kernel/sched.c linux-2.6.37/kernel/sched.c
+*** original/linux-2.6.37//kernel/sched.c	2011-01-04 19:50:19.000000000 -0500
+--- linux-2.6.37/kernel/sched.c	2011-02-19 15:57:19.207499000 -0500
+***************
+*** 5254,5259 ****
+--- 5254,5261 ----
+  	return retval;
+  }
+  
++ EXPORT_SYMBOL(sched_setaffinity);
++ 
+  static int get_user_cpu_mask(unsigned long __user *user_mask_ptr, unsigned len,
+  			     struct cpumask *new_mask)
+  {
+diff -crB original/linux-2.6.37//mm/mmap.c linux-2.6.37/mm/mmap.c
+*** original/linux-2.6.37//mm/mmap.c	2011-01-04 19:50:19.000000000 -0500
+--- linux-2.6.37/mm/mmap.c	2011-02-17 17:17:44.495256426 -0500
+***************
+*** 1662,1667 ****
+--- 1662,1669 ----
+  	return prev ? prev->vm_next : vma;
+  }
+  
++ EXPORT_SYMBOL(find_vma_prev);
++ 
+  /*
+   * Verify that the stack growth is acceptable and
+   * update accounting. This is shared with both the
+diff -crB original/linux-2.6.37//mm/mprotect.c linux-2.6.37/mm/mprotect.c
+*** original/linux-2.6.37//mm/mprotect.c	2011-01-04 19:50:19.000000000 -0500
+--- linux-2.6.37/mm/mprotect.c	2011-02-17 20:10:25.203777051 -0500
+***************
+*** 112,118 ****
+  
+  static void change_protection(struct vm_area_struct *vma,
+  		unsigned long addr, unsigned long end, pgprot_t newprot,
+! 		int dirty_accountable)
+  {
+  	struct mm_struct *mm = vma->vm_mm;
+  	pgd_t *pgd;
+--- 112,118 ----
+  
+  static void change_protection(struct vm_area_struct *vma,
+  		unsigned long addr, unsigned long end, pgprot_t newprot,
+! 		int dirty_accountable, unsigned do_not_flush_tlb)
+  {
+  	struct mm_struct *mm = vma->vm_mm;
+  	pgd_t *pgd;
+***************
+*** 128,139 ****
+  			continue;
+  		change_pud_range(mm, pgd, addr, next, newprot, dirty_accountable);
+  	} while (pgd++, addr = next, addr != end);
+! 	flush_tlb_range(vma, start, end);
+  }
+  
+  int
+  mprotect_fixup(struct vm_area_struct *vma, struct vm_area_struct **pprev,
+! 	unsigned long start, unsigned long end, unsigned long newflags)
+  {
+  	struct mm_struct *mm = vma->vm_mm;
+  	unsigned long oldflags = vma->vm_flags;
+--- 128,140 ----
+  			continue;
+  		change_pud_range(mm, pgd, addr, next, newprot, dirty_accountable);
+  	} while (pgd++, addr = next, addr != end);
+!     if (!do_not_flush_tlb)
+! 	    flush_tlb_range(vma, start, end);
+  }
+  
+  int
+  mprotect_fixup(struct vm_area_struct *vma, struct vm_area_struct **pprev,
+! 	unsigned long start, unsigned long end, unsigned long newflags, unsigned do_not_flush_tlb)
+  {
+  	struct mm_struct *mm = vma->vm_mm;
+  	unsigned long oldflags = vma->vm_flags;
+***************
+*** 207,213 ****
+  	if (is_vm_hugetlb_page(vma))
+  		hugetlb_change_protection(vma, start, end, vma->vm_page_prot);
+  	else
+! 		change_protection(vma, start, end, vma->vm_page_prot, dirty_accountable);
+  	mmu_notifier_invalidate_range_end(mm, start, end);
+  	vm_stat_account(mm, oldflags, vma->vm_file, -nrpages);
+  	vm_stat_account(mm, newflags, vma->vm_file, nrpages);
+--- 208,214 ----
+  	if (is_vm_hugetlb_page(vma))
+  		hugetlb_change_protection(vma, start, end, vma->vm_page_prot);
+  	else
+! 		change_protection(vma, start, end, vma->vm_page_prot, dirty_accountable, do_not_flush_tlb);
+  	mmu_notifier_invalidate_range_end(mm, start, end);
+  	vm_stat_account(mm, oldflags, vma->vm_file, -nrpages);
+  	vm_stat_account(mm, newflags, vma->vm_file, nrpages);
+***************
+*** 219,224 ****
+--- 220,227 ----
+  	return error;
+  }
+  
++ EXPORT_SYMBOL(mprotect_fixup);
++ 
+  SYSCALL_DEFINE3(mprotect, unsigned long, start, size_t, len,
+  		unsigned long, prot)
+  {
+***************
+*** 297,303 ****
+  		tmp = vma->vm_end;
+  		if (tmp > end)
+  			tmp = end;
+! 		error = mprotect_fixup(vma, &prev, nstart, tmp, newflags);
+  		if (error)
+  			goto out;
+  		nstart = tmp;
+--- 300,306 ----
+  		tmp = vma->vm_end;
+  		if (tmp > end)
+  			tmp = end;
+! 		error = mprotect_fixup(vma, &prev, nstart, tmp, newflags, 0);
+  		if (error)
+  			goto out;
+  		nstart = tmp;
