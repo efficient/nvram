@@ -1,4 +1,5 @@
-== nvmalloc ==
+nvmalloc
+========
 
 A static library that implements NVMalloc.
 
