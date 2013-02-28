@@ -1,0 +1,11 @@
+== nvmalloc ==
+
+A static library that implements NVMalloc.
+
+To build lib/libnvmalloc.a:
+
+autoreconf -ifs
+./configure
+make
+
+
